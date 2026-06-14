@@ -2,14 +2,25 @@
 <html>
     <head>
         <title>Barricade</title>
+        <link rel="stylesheet" href="./navbar.css">
         <link rel="stylesheet" href="./style.css">
         <script defer src="main.js" type="module"></script>
         <link rel="shortcut icon" href="#">
     </head>
     <body>
+        <div class="navbar">
+            <a href="../index.html">Home</a>
+            <button id="reset_button">Reset</button>
+            <div class="dropdown">
+            <button class="dropbtn">Settings</button>
+                <div class="dropdown-content toggles">
+                    <label><span>Display costs</span><div class="toggle"><input id="display_costs" type="checkbox"><span class="slider"></span></div></label>
+                    <label><span>Display sets</span><div class="toggle"><input id="display_sets" type="checkbox"><span class="slider"></span></div></label>
+                </div>
+            </div>
+        </div>
         <div class="mainDisplay">
             <canvas width="800" height="800" id="canvas" oncontextmenu="return false;">Canvas failed to load!</canvas>
-            <p id="testText">Loading...</p>
         </div>
     </body>
 </html>

@@ -1,6 +1,9 @@
-import { createArray2D } from "./support.js";
+import { createArray2DTiles } from "./support.js";
 import Player from "./player.js"
 import Wall from "./wall.js"
+import Tile from "./tile.js"
+import Pathfinding from "./pathfinding.js";
+import UIManager from "./ui.js";
 
 class Main {
     constructor() {
@@ -30,9 +33,6 @@ class Main {
         window.addEventListener('keydown', this.handleKeyDown.bind(this));
         window.addEventListener('keyup', this.handleKeyUp.bind(this));
 
-        // ---------------- DELTATIME ------------
-        this.dt = 0, this.lt = performance.now();
-
         // -------------------TEXT ---------------
         this.ctx.imageSmoothingEnabled = false;
         this.ctx.font = `bold 20px sans-serif`;
@@ -40,14 +40,18 @@ class Main {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
 
-        // Player
-        this.player = new Player(this, 4, 8);
+        this.uiManager = new UIManager(this);
 
-        let gridSize = this.GRID_WIDTH + (this.GRID_WIDTH - 1);
-        this.grid = createArray2D(gridSize, gridSize);
+        this.player = new Player(this, 4, 8); // 4, 8
 
-        this.walls = [];
+        this.grid = createArray2DTiles(this.GRID_WIDTH, this.GRID_HEIGHT);
+
+        this.walls = new Set();
         this.selectedWall = { x: 0, y: 0, valid: false};
+
+        this.pathfinding = new Pathfinding(this);
+
+        this.player.updateAvailableMoves();
     }
 
     handleMouseMove(event) {
@@ -88,8 +92,16 @@ class Main {
 
         if (this.mouse.inGap) {
             this.placeWall();
-            this.render();
+        } else {
+
+            const movementKey = `${this.mouse.tileX};${this.mouse.tileY}`;
+            if (this.player.availableMoves.has(movementKey)) {
+                this.player.move(this.mouse.tileX, this.mouse.tileY);
+            }
+
         }
+
+        this.render();
     }
 
     handleMouseUp(event) {
@@ -101,7 +113,16 @@ class Main {
 
         // "Spacebar", "Shift", "Escape", "ArrowUp", "Delete"
         if (event.key === "r") {
-            console.log("Key r pressed!");
+
+            if (this.pathfinding.complete) return;
+
+            this.pathfinding.step();
+            this.render();
+        }
+
+        if (event.key === "c") {
+            this.pathfinding.setup();
+            this.render();
         }
     }
 
@@ -115,35 +136,59 @@ class Main {
             return;
         }
 
-        let wallIndex = -1;
+        const key = `${this.selectedWall.x};${this.selectedWall.y};${this.mouse.vertical}`;
 
-        this.walls.forEach((wall, i) => {
+        // Check if wall being placed already exists
+        if (this.walls.has(key)) {
+            return;
+        } 
 
-            if (wall.x == this.selectedWall.x && wall.y == this.selectedWall.y && wall.vertical == this.mouse.vertical) {
-                wallIndex = i;
-            }
+        // Collision checks
+        if (this.mouse.vertical) {
 
-            // Fix case 1
-            if ((wall.x == (this.selectedWall.x + 1)) && (!wall.vertical && !this.mouse.vertical)) {
-                wallIndex = 0;
-                console.log("Invalid wall!")
-                return;
-            }
+            // Case 1, Cross shape
+            if (this.wallIsColliding(this.selectedWall.x - 1, this.selectedWall.y + 1, !this.mouse.vertical)) return;
 
-        });
+            // Case 2, Bottom overlap
+            if (this.wallIsColliding(this.selectedWall.x, this.selectedWall.y + 1, this.mouse.vertical)) return;
 
-        if (wallIndex != -1) {
+            // Case 3, Top overlap
+            if (this.wallIsColliding(this.selectedWall.x, this.selectedWall.y - 1, this.mouse.vertical)) return;
+
+        } else {
+            // Case 1, Cross shape
+            if (this.wallIsColliding(this.selectedWall.x + 1, this.selectedWall.y - 1, !this.mouse.vertical)) return;
+
+            // Case 2, Right overlap
+            if (this.wallIsColliding(this.selectedWall.x + 1, this.selectedWall.y, this.mouse.vertical)) return;
+
+            // Case 3, Left overlap
+            if (this.wallIsColliding(this.selectedWall.x - 1, this.selectedWall.y, this.mouse.vertical)) return;
+        }
+
+        // Place wall
+        this.walls.add(key);
+
+        // There must always be a path towards the goal (test this with new wall)
+        this.pathfinding.setup();
+        const validWall = this.pathfinding.pathfind();
+        if (!validWall) {
+            console.log("Wall fully blocks path!")
+            this.walls.delete(key);
             return;
         }
 
-        console.log("Wall placed!")
 
-        if (this.mouse.vertical) {
-            this.walls.push(new Wall(this.selectedWall.x, this.selectedWall.y, true))
+        this.player.updateAvailableMoves();
+    }
 
-        } else {
-            this.walls.push(new Wall(this.selectedWall.x, this.selectedWall.y, false))
+    wallIsColliding(x, y, o) {
+        const checkingKey = `${x};${y};${o}`;
+        if (this.walls.has(checkingKey)) {
+            console.log("Invalid wall!");
+            return true;
         }
+        return false;
     }
 
     renderSelectedWall() {
@@ -209,9 +254,24 @@ class Main {
         for (let x = 0; x < this.GRID_WIDTH; x++) {
             for (let y = 0; y < this.GRID_HEIGHT; y++) {
 
-                let colour = (y == 0 || (y == this.GRID_HEIGHT - 1)) ? "rgba(62, 50, 50, 1)" : "rgba(42, 42, 42, 1)";
-                this.ctx.fillStyle = colour;
+                let colour = "rgba(42, 42, 42, 1)";
+                if (y == 0) {
+                    colour = "rgba(62, 50, 50, 1)";
+                } else if (y == this.GRID_HEIGHT - 1) {
+                    colour = "rgba(47, 54, 64, 1)";
+                }
 
+                // Pathfinding background
+                if (this.uiManager.display_sets) {
+                    let tile = this.grid[x][y];
+                    if (this.pathfinding.open.has(tile)) {
+                        colour = "rgb(92, 109, 73)";
+                    } else if (this.pathfinding.closed.has(tile)) {
+                        colour = "rgb(107, 55, 52)";
+                    }
+                }
+
+                this.ctx.fillStyle = colour;
                 this.ctx.fillRect(x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE,
                     y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE,
                     this.TILE_SIZE,
@@ -223,73 +283,104 @@ class Main {
         // Render placed walls
         this.ctx.fillStyle = "rgba(255, 0, 0, 1)";
         this.walls.forEach((wall) => {
-            if (wall.vertical) {
 
-                this.ctx.fillRect(wall.x * this.TILE_SIZE + wall.x * this.GAP_SIZE,
-                    wall.y * this.TILE_SIZE + (wall.y + 1) * this.GAP_SIZE,
+            const wallData = wall.split(";");
+            const x = +wallData[0];
+            const y = +wallData[1];
+            const vertical = (wallData[2] == "true");
+
+            if (vertical) {
+
+                this.ctx.fillRect(x * this.TILE_SIZE + x * this.GAP_SIZE,
+                    y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE,
                     this.GAP_SIZE, 2 * this.TILE_SIZE + this.GAP_SIZE);
 
             } else {
-                this.ctx.fillRect(wall.x * this.TILE_SIZE + (wall.x + 1) * this.GAP_SIZE,
-                    wall.y * this.TILE_SIZE + wall.y * this.GAP_SIZE,
+                this.ctx.fillRect(x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE,
+                    y * this.TILE_SIZE + y * this.GAP_SIZE,
                     2 * this.TILE_SIZE + this.GAP_SIZE, this.GAP_SIZE);
             }
         }); 
 
         // Render player
-        this.ctx.fillStyle = "rgba(183, 0, 255, 255)";
+        this.ctx.fillStyle = this.player.colour;
         this.ctx.fillRect(this.player.x * this.TILE_SIZE + (this.player.x + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
             this.player.y * this.TILE_SIZE + (this.player.y + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
             this.HALF_TILE_SIZE, this.HALF_TILE_SIZE);
         
 
+        // Wall outline for selected wall
         if (this.mouse.inGap) {
             this.selectedWall.valid = false;
             this.renderSelectedWall();
         }
 
-        // -------- RECTANGLE ----------
-        // this.ctx.fillStyle = color;
-        // this.ctx.fillRect(x, y, width, height);
+        // Player move outlines
+        this.player.availableMoves.forEach((move) => {
+            const moveData = move.split(";");
+            const x = +moveData[0];
+            const y = +moveData[1];
 
-        // -------- CIRCLE -------------
-        // this.ctx.fillStyle = color;
-        // this.ctx.beginPath();
-        // this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-        // this.ctx.fill();
+            this.ctx.strokeStyle = "rgb(252, 252, 252)";
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE,
+                y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE,
+                this.TILE_SIZE,
+                this.TILE_SIZE);
+        });
 
-        // --------- TEXT ------------
-        // this.ctx.fillStyle = color;
-        // this.ctx.fillText(text, x, y);
+
+        // Pathfinding text
+        if (this.uiManager.display_costs) {
+
+            for (let x = 0; x < this.GRID_WIDTH; x++) {
+                for (let y = 0; y < this.GRID_HEIGHT; y++) {
+
+                    if (x == this.player.x && y == this.player.y) {
+                        continue;
+                    }
+
+                    const tile = this.grid[x][y];
+
+                    if (tile.f == 0) continue;
+
+                    this.ctx.fillStyle = "rgb(34, 185, 255)";
+
+                    // F cost
+                    this.ctx.font = `bold ${20}px sans-serif`;
+                    this.ctx.fillText(+tile.f,
+                        x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE + this.HALF_TILE_SIZE,
+                        y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE + this.HALF_TILE_SIZE + (this.QUARTER_TILE_SIZE * 0.5));
+                    
+                    // G and H costs
+                    this.ctx.font = `bold ${12}px sans-serif`;
+                    this.ctx.fillText(+tile.g,
+                        x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
+                        y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE);
+                    this.ctx.fillText(+tile.h,
+                        x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE + this.TILE_SIZE - this.QUARTER_TILE_SIZE,
+                        y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE);
+
+                }
+            }
+        }
     }
 
-    // update() {
-    //     // ------- DELTATIME --------
-    //     const now = performance.now();
-    //     this.dt = (now - this.lt) / 1000;
-    //     this.lt = now;
+    reset() {
+        this.player.x = 4;
+        this.player.y = 8;
 
-    //     requestAnimationFrame(this.update);
-    // }
+        this.walls = new Set();
+
+        this.pathfinding.setup();
+        this.player.updateAvailableMoves();
+    }
 
     run() {
         this.render();
-        // requestAnimationFrame(this.update);
     }
 
 }
 
 let main = new Main();
 main.run();
-
-// let testText = document.getElementById("testText")
-
-// async function loadData() {
-//   const response = await fetch('./data.json');
-//   const data = await response.json();
-
-//   console.log(data); 
-//   testText.textContent = data[0].name;      
-// }
-
-// loadData();
