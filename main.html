@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Barricade</title>
+        <link rel="stylesheet" href="./navbar.css">
+        <link rel="stylesheet" href="./style.css">
+        <script defer src="main.js" type="module"></script>
+        <link rel="shortcut icon" href="#">
+    </head>
+    <body>
+        <div class="navbar">
+
+            <div class="left">
+                <a href="../index.html">Barricade</a>
+                <button id="reset_button">Reset</button>
+
+                <div class="dropdown">
+                    <button class="dropbtn">Info</button>
+                    <div class="dropdown-content toggles">
+                        <button>Pick me</button>
+                    </div>
+                </div>
+
+                <div class="dropdown">
+                    <button class="dropbtn">Human</button>
+                    <div class="dropdown-content toggles">
+                        <button>Human</button>
+                        <button>Random AI</button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="middle">VS</p>
+
+            <div class="right">
+                <div class="dropdown">
+                    <button class="dropbtn">Human</button>
+                    <div class="dropdown-content toggles">
+                        <button>Human</button>
+                        <button>Random AI</button>
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button class="dropbtn">Options</button>
+                    <div class="dropdown-content toggles">
+                        <label><span>Display costs</span><div class="toggle"><input id="display_costs" type="checkbox"><span class="slider"></span></div></label>
+                        <label><span>Display sets</span><div class="toggle"><input id="display_sets" type="checkbox"><span class="slider"></span></div></label>
+                    </div>
+                </div>
+                <p id="navbar_text">Red's turn</p>
+            </div>
+
+        </div>
+
+        <div class="mainDisplay">
+            <canvas width="800" height="800" id="canvas" oncontextmenu="return false;">Canvas failed to load!</canvas>
+        </div>
+        
+    </body>
+</html>

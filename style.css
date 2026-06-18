@@ -1,0 +1,13 @@
+.mainDisplay {
+    display: flex;
+    justify-content: center;
+    align-content: flex-start;
+    padding-top: 20px;
+}
+
+canvas {
+    outline-style: solid;
+    outline-width: 2px;
+    border-radius: 2%;
+    background-color: rgb(26, 26, 26);
+}
