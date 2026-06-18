@@ -1,2 +1,0 @@
-- Make a slightly larger range for gap detection
-- Fix mouse not being over wall vertical
