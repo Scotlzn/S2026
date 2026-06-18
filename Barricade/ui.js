@@ -9,6 +9,9 @@ export default class UIManager {
             this.main.render();
         }
 
+        // Navbar text
+        this.ui_navbar_text = document.getElementById("navbar_text");
+
         // Display costs UI toggle
         this.ui_display_costs = document.getElementById("display_costs");
         this.ui_display_costs.checked = true;
@@ -16,6 +19,7 @@ export default class UIManager {
 
         this.ui_display_costs.onchange = () => {
             this.display_costs = this.ui_display_costs.checked;
+            this.main.pathfinding.setup(this.main.turn.player);
             this.main.render();
         }
 
@@ -26,6 +30,7 @@ export default class UIManager {
 
         this.ui_display_sets.onchange = () => {
             this.display_sets = this.ui_display_sets.checked;
+            this.main.pathfinding.setup(this.main.turn.player);
             this.main.render();
         }
 
@@ -45,5 +50,14 @@ export default class UIManager {
         document.addEventListener('click', () => dropdowns.forEach(d => d.classList.remove('show')));
         dropdowns.forEach(d => d.addEventListener('click', e => e.stopPropagation()));
     
+    }
+
+    updateNavbarText() {
+        this.ui_navbar_text.textContent = (this.main.redTurn) ? "Red's turn" : "Blue's turn";
+    }
+
+    gameFinished() {
+        const winner = (this.main.redTurn) ? "Red" : "Blue";
+        this.ui_navbar_text.textContent = `${winner} won!`;
     }
 }

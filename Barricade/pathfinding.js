@@ -10,10 +10,12 @@ export default class Pathfinding {
         this.complete = false;
         this.failed = true;
 
-        this.setup();
+        this.currentPlayer = 0;
+
+        this.setup(0);
     }
 
-    setup() {
+    setup(player) {
 
         // Reset costs of all tiles
         for (let x = 0; x < this.main.GRID_WIDTH; x++) {
@@ -29,7 +31,9 @@ export default class Pathfinding {
         this.complete = false;
         this.failed = true;
 
-        this.open.add(this.main.grid[this.main.player.x][this.main.player.y]);
+        this.currentPlayer = player;
+
+        this.open.add(this.main.grid[this.main.players[player].x][this.main.players[player].y]);
     }
 
     step() {
@@ -46,7 +50,8 @@ export default class Pathfinding {
         this.closed.add(this.current);
 
         // if current == END, path has been found
-        if (this.current.y == 0) {
+        const endY = (this.currentPlayer == 0) ? 0 : (this.main.GRID_HEIGHT - 1);
+        if (this.current.y == endY) {
             this.complete = true;
             this.failed = false;
             return;
@@ -103,7 +108,10 @@ export default class Pathfinding {
     }
 
     heuristic(x, y) {
-        // Math.abs((8 - y) * 10)
-        return y*10;
+        if (this.currentPlayer == 0) {
+            return y * 10;
+        }
+        return Math.abs((8 - y) * 10);
     }
+
 }

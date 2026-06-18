@@ -15,7 +15,7 @@ class Main {
 
         // What im doing is calculating the tile size based on how many (tile + gap) units fit in the fixed
         // canvas size + an additional gap at the start ((canvas width - 1 gap) / (tileSize + gapSize) = grid width, and solving for tileSize)
-        let total_gap_size = this.GRID_WIDTH * this.GAP_SIZE;
+        const total_gap_size = this.GRID_WIDTH * this.GAP_SIZE;
         this.TILE_SIZE = ((this.canvas.width - this.GAP_SIZE) - total_gap_size) / this.GRID_WIDTH;
         this.HALF_TILE_SIZE = this.TILE_SIZE * 0.5;
         this.QUARTER_TILE_SIZE = this.HALF_TILE_SIZE * 0.5;
@@ -40,18 +40,22 @@ class Main {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
 
+        this.turn = { player: 0, oppositePlayer: 1}; // 0 = red, 1 = blue
+        this.redTurn = true; // True = red's turn, false = blue's turn
+        this.finished = false;
+
         this.uiManager = new UIManager(this);
 
-        this.player = new Player(this, 4, 8); // 4, 8
+        this.players = [new Player(this, 4, 8, 0), new Player(this, 4, 0, 1)]; // player 0 at the bottom, player 1 at the top
 
         this.grid = createArray2DTiles(this.GRID_WIDTH, this.GRID_HEIGHT);
 
-        this.walls = new Set();
+        this.walls = new Map();
         this.selectedWall = { x: 0, y: 0, valid: false};
 
         this.pathfinding = new Pathfinding(this);
 
-        this.player.updateAvailableMoves();
+        this.players[0].updateAvailableMoves();
     }
 
     handleMouseMove(event) {
@@ -90,18 +94,51 @@ class Main {
     handleMouseDown(event) {
         this.mouse.down = true;
 
+        if (this.finished) return;
+
         if (this.mouse.inGap) {
+            // const start = performance.now();
             this.placeWall();
+            // const end = performance.now();
+            // console.log(`Took ${end - start}ms`);
+
         } else {
-
-            const movementKey = `${this.mouse.tileX};${this.mouse.tileY}`;
-            if (this.player.availableMoves.has(movementKey)) {
-                this.player.move(this.mouse.tileX, this.mouse.tileY);
-            }
-
+            this.playerMovement();
         }
 
         this.render();
+    }
+
+    playerMovement() {
+        const movementKey = `${this.mouse.tileX};${this.mouse.tileY}`;
+
+        // Player can only move into valid (highlighted) tiles
+        if (!this.players[this.turn.player].availableMoves.has(movementKey)) return;
+
+        const player = this.players[this.turn.player];
+        player.move(this.mouse.tileX, this.mouse.tileY);
+
+        // Check to see if player has won
+        if (player.y == player.goal) {
+            this.endGame();
+            return;
+        }
+
+        this.players[this.turn.oppositePlayer].updateAvailableMoves();
+        this.turnCompleted();
+
+        if (this.uiManager.display_sets) {
+            this.pathfinding.setup(this.turn.player);
+        }
+    }
+
+    endGame() {
+        this.players[this.turn.player].availableMoves = new Set();
+        if (this.uiManager.display_sets) {
+            this.pathfinding.setup(this.turn.player);
+        }
+        this.uiManager.gameFinished();
+        this.finished = true;
     }
 
     handleMouseUp(event) {
@@ -111,17 +148,20 @@ class Main {
     handleKeyDown(event) {
         this.keys[event.key] = true;
 
+        // If pathfinding UI is disabled the debug keys are useless as their changes won't show
+        if ((!this.uiManager.display_sets) && (!this.uiManager.display_costs)) return;
+
         // "Spacebar", "Shift", "Escape", "ArrowUp", "Delete"
-        if (event.key === "r") {
+        if (event.key == "r") {
 
-            if (this.pathfinding.complete) return;
-
-            this.pathfinding.step();
-            this.render();
+            if (!this.pathfinding.complete) {
+                this.pathfinding.step();
+                this.render();
+            }
         }
 
-        if (event.key === "c") {
-            this.pathfinding.setup();
+        if (event.key == "c") {
+            this.pathfinding.setup(this.turn.player);
             this.render();
         }
     }
@@ -167,19 +207,37 @@ class Main {
         }
 
         // Place wall
-        this.walls.add(key);
+        const wall = new Wall(this.selectedWall.x, this.selectedWall.y, this.mouse.vertical, this.turn.player);
+        this.walls.set(key, wall);
 
-        // There must always be a path towards the goal (test this with new wall)
-        this.pathfinding.setup();
-        const validWall = this.pathfinding.pathfind();
+        // Prevent blocking opponent
+        this.pathfinding.setup(this.turn.oppositePlayer);
+        let validWall = this.pathfinding.pathfind();
         if (!validWall) {
-            console.log("Wall fully blocks path!")
+            console.log("Wall fully blocks enemy path!");
             this.walls.delete(key);
             return;
         }
 
+        // Prevent self-blocking
+        this.pathfinding.setup(this.turn.player);
+        validWall = this.pathfinding.pathfind();
+        if (!validWall) {
+            console.log("Wall fully blocks your own path!");
+            this.walls.delete(key);
+            return;
+        }
 
-        this.player.updateAvailableMoves();
+        // Placed wall is valid!
+        this.players[this.turn.oppositePlayer].updateAvailableMoves();
+        this.turnCompleted();
+    }
+
+    turnCompleted() {
+        this.redTurn = !this.redTurn;
+        this.turn.player = (this.redTurn) ? 0 : 1;
+        this.turn.oppositePlayer = Math.abs(this.turn.player - 1);
+        this.uiManager.updateNavbarText();
     }
 
     wallIsColliding(x, y, o) {
@@ -192,7 +250,10 @@ class Main {
     }
 
     renderSelectedWall() {
-        this.ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+
+        if (this.finished) return;
+
+        this.ctx.fillStyle = (this.turn.player == 0) ? "rgba(255, 0, 0, 0.5)" : "rgba(27, 126, 207, 0.5)";
 
         // Prevent right and bottom edge walls
         if (this.mouse.tileX == this.GRID_WIDTH || this.mouse.tileY == this.GRID_HEIGHT) {
@@ -280,43 +341,40 @@ class Main {
             }
         }
 
-        // Render placed walls
-        this.ctx.fillStyle = "rgba(255, 0, 0, 1)";
-        this.walls.forEach((wall) => {
-
-            const wallData = wall.split(";");
-            const x = +wallData[0];
-            const y = +wallData[1];
-            const vertical = (wallData[2] == "true");
-
-            if (vertical) {
-
-                this.ctx.fillRect(x * this.TILE_SIZE + x * this.GAP_SIZE,
-                    y * this.TILE_SIZE + (y + 1) * this.GAP_SIZE,
-                    this.GAP_SIZE, 2 * this.TILE_SIZE + this.GAP_SIZE);
-
-            } else {
-                this.ctx.fillRect(x * this.TILE_SIZE + (x + 1) * this.GAP_SIZE,
-                    y * this.TILE_SIZE + y * this.GAP_SIZE,
-                    2 * this.TILE_SIZE + this.GAP_SIZE, this.GAP_SIZE);
-            }
-        }); 
-
-        // Render player
-        this.ctx.fillStyle = this.player.colour;
-        this.ctx.fillRect(this.player.x * this.TILE_SIZE + (this.player.x + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
-            this.player.y * this.TILE_SIZE + (this.player.y + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
-            this.HALF_TILE_SIZE, this.HALF_TILE_SIZE);
-        
-
-        // Wall outline for selected wall
+        // Wall outline for selected wall -> below placed walls to prevent weird overlap
         if (this.mouse.inGap) {
             this.selectedWall.valid = false;
             this.renderSelectedWall();
         }
 
+        // Render placed walls
+        this.walls.forEach((wall, key) => {
+            
+            this.ctx.fillStyle = (wall.player == 0) ? "rgba(255, 0, 0, 1)" : "rgba(27, 126, 207, 1)";
+
+            if (wall.vertical) {
+
+                this.ctx.fillRect(wall.x * this.TILE_SIZE + wall.x * this.GAP_SIZE,
+                    wall.y * this.TILE_SIZE + (wall.y + 1) * this.GAP_SIZE,
+                    this.GAP_SIZE, 2 * this.TILE_SIZE + this.GAP_SIZE);
+
+            } else {
+                this.ctx.fillRect(wall.x * this.TILE_SIZE + (wall.x + 1) * this.GAP_SIZE,
+                    wall.y * this.TILE_SIZE + wall.y * this.GAP_SIZE,
+                    2 * this.TILE_SIZE + this.GAP_SIZE, this.GAP_SIZE);
+            }
+        }); 
+
+        // Render players
+        for (let i = 0; i < 2; i++) {
+            this.ctx.fillStyle = this.players[i].colour;
+            this.ctx.fillRect(this.players[i].x * this.TILE_SIZE + (this.players[i].x + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
+                this.players[i].y * this.TILE_SIZE + (this.players[i].y + 1) * this.GAP_SIZE + this.QUARTER_TILE_SIZE,
+                this.HALF_TILE_SIZE, this.HALF_TILE_SIZE);
+        }
+        
         // Player move outlines
-        this.player.availableMoves.forEach((move) => {
+        this.players[this.turn.player].availableMoves.forEach((move) => {
             const moveData = move.split(";");
             const x = +moveData[0];
             const y = +moveData[1];
@@ -336,7 +394,7 @@ class Main {
             for (let x = 0; x < this.GRID_WIDTH; x++) {
                 for (let y = 0; y < this.GRID_HEIGHT; y++) {
 
-                    if (x == this.player.x && y == this.player.y) {
+                    if (x == this.players[0].x && y == this.players[0].y) {
                         continue;
                     }
 
@@ -367,13 +425,22 @@ class Main {
     }
 
     reset() {
-        this.player.x = 4;
-        this.player.y = 8;
+        this.players[0].x = 4;
+        this.players[0].y = 8;
 
-        this.walls = new Set();
+        this.players[1].x = 4;
+        this.players[1].y = 0;
 
-        this.pathfinding.setup();
-        this.player.updateAvailableMoves();
+        this.BOUNDING_BOX = this.canvas.getBoundingClientRect();
+        this.redTurn = true;
+        this.turn = { player: 0, oppositePlayer: 1};
+        this.finished = false;
+        this.uiManager.updateNavbarText();
+
+        this.walls = new Map();
+
+        this.pathfinding.setup(0);
+        this.players[0].updateAvailableMoves();
     }
 
     run() {
